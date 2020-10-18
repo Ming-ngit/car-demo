@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<style>
+#bn{
+	float:left;
+}
+
+.car-rank{
+	width: 200px;
+	height: 100px;
+	position: absolute;
+}
+
+
+</style>
+<html lang="en">
+<head>
+	<title></title>
+	<meta charset="utf-8">
+	<meta name="generator" content="Three.js Editor">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+</head>
+<body>
+	<div id="bn">
+		<div id="tar" style="width: 900px; height: 562.5px;"></div>
+		<div>
+			<button id="bCar" type="button">change car</button>
+			<button id="b" type="button">change camera</button>
+			<button class="start" type="button" data-val="0">start1</button>
+			<button class="start" type="button" data-val="1">start2</button>
+		</div>
+	</div>
+	<div id="rank"></div>
+	<script src="//cdnjs.cloudflare.com/ajax/libs/three.js/105/three.min.js"></script>
+	<script src="js/OrbitControls.js"></script>
+	<script src="js/stats.min.js"></script>
+	
+	<script src="//cdnjs.cloudflare.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+	<script src="//cdnjs.cloudflare.com/ajax/libs/gsap/2.1.2/TweenMax.min.js"></script>
+	
+	
+<script type="module">
+	$(function(){
+		
+		for(var i = 0; i < 10; i++){
+			var attr = {
+				src       : 'img/car' + (i-(-1)) + '.png',
+				title     : 'car' + (i - (-1)),
+				border    : '3px',
+				height    : '40px',
+				'data-id' : i,
+			};
+			var img = $('<img>').attr(attr);
+			var div = $('<div></div>').attr({'id': 'car-' + i, 'class': 'car-rank'}).css({top:8 + 50 * i, left:1220}).html(img);
+			$('#rank').append(div); 
+		}
+		
+		var tar = $('#tar');
+		var camera, camera2, scene, renderer;
+		var loader = new THREE.FileLoader();
+		var parent, splineCamera, cameraHelper, cameraEye, road, cameraControl;
+		var timeout_arr = [];
+		
+		var change_loop = 0.23613;
+		var looptime = 1;
+		var move = [];
+		var a1 = [];
+		var a1n = [];
+		var a2 = [];
+		var a2n = [];
+		var a4 = [];
+		var car_arr = [];
+		var car_rank = [];
+		var flag = 3;
+		var key = 0;
+		var rsize = 1;
+		var size = 1;
+		var road_max = 0.45;
+		var road_min = -0.45;
+		var start_width = 0.1;
+		var color_material = [];
+		var color_geometry = new THREE.PlaneBufferGeometry( 0.1, 0.04);
+		
+		var color2 = [
+			new THREE.Color(0xffd700),
+			new THREE.Color(0x000080),
+			new THREE.Color(0x850000),
+			new THREE.Color(0x800000),
+			new THREE.Color(0x00fa9a),
+			new THREE.Color(0x4b0082),
+			new THREE.Color(0xffffff),
+			new THREE.Color(0xff0000),
+			new THREE.Color(0x8b0000),
+			new THREE.Color(0x006400),
+		];
+
+		var tmp_next = 0;
+		var spherePoints;
+		var pcnt = 25000;
+		
+		//speed arr
+		var base_speed = [];
+		var car;
+		
+		loader.load('app1.json?13', function(text){
+			renderer = new THREE.WebGLRenderer({antialias: true, alpha: true});
+			renderer.setClearColor(0xffffff, 0);
+			renderer.gammaOutput = true;
+			renderer.setPixelRatio(window.devicePixelRatio);
+			renderer.shadowMap.enabled = true;
+			tar.append(renderer.domElement);
+			
+			var json = JSON.parse(text);
+			var loader = new THREE.ObjectLoader();
+			scene = loader.parse(json.scene);
+			camera = loader.parse(json.camera);
+			scene.background = null
+			
+			// bind animation
+			var events = [];
+			for(var uuid in json.scripts){
+				var object = scene.getObjectByProperty('uuid', uuid, true);
+				if(object === undefined) continue;
+				var scripts = json.scripts[uuid];
+				for(var i in scripts){
+					var update = (new Function(scripts[i].source + ' return update;').bind(object))();
+					events.push(update.bind(object))
+				}
+			}
+			
+			$(window).resize(function(){
+				var width = tar.width();
+				var height = width * 500 / 800;
+				
+				renderer.setSize(width, height);
+				
+				camera.aspect = width / height;
+				camera.updateProjectionMatrix();
+			}).resize();
+			
+			
+			cameraControl = new THREE.OrbitControls(camera, renderer.domElement)
+			cameraControl.enableDamping = true // 啟用阻尼效果
+			cameraControl.dampingFactor = 0.25 // 阻尼系數
+			
+			
+			
+			var time;
+			renderer.setAnimationLoop(function(t){
+				for(var i in events){
+					events[i]({time: t, delta: t - time});
+				}
+				time = t;
+				renderer.render(scene, camera);
+				cameraControl.update();
+			});
+			
+			todo();
+		});
+
+		function todo(){
+
+			rsize = 5;
+			size = 0.065 * rsize;
+			road_max *= rsize;
+			road_min *= rsize;
+			start_width *= rsize;
+			car = scene.getObjectByName('Car');
+			car.scale.copy(new THREE.Vector3(size, size, size));
+			
+			//道路圖片
+			var road_obj = scene.getObjectByName('ribbonMesh1');
+			var line_obj = scene.getObjectByName('nurbsCircle2');
+			road_obj.scale.copy(new THREE.Vector3(rsize,rsize,rsize));
+			line_obj.scale.copy(new THREE.Vector3(rsize,rsize,rsize));
+			
+			road_obj.material.map = new THREE.ImageUtils.loadTexture('img/rd3.jpg?7');
+			road_obj.material.color = null;
+			road_obj.material.side = THREE.DoubleSide; 
+			// road_obj.material.blending = THREE.AdditiveBlending;
+			road_obj.material.map.wrapS = road_obj.material.map.wrapT = THREE.RepeatWrapping;
+			road_obj.material.map.repeat.set( 3,80);
+
+			var road = road_obj.geometry.attributes.position.array;
+			var normal = road_obj.geometry.attributes.normal.array;
+			var line = line_obj.geometry.attributes.position.array;
+			
+
+			
+			for(var i = 0; i < road.length/3; i++){
+				var t2 = new THREE.Vector3(road[3*i], road[3*i+1], road[3*i+2]).multiplyScalar(rsize);
+				a1.push(t2);
+				var t2 = new THREE.Vector3(normal[3*i], normal[3*i+1], normal[3*i+2]).multiplyScalar(rsize);
+				a1n.push(t2);
+			}
+			
+			for(var i = 0; i < line.length/3; i++){
+				var t2 = new THREE.Vector3(line[3*i], line[3*i+1], line[3*i+2]).multiplyScalar(rsize);
+				a2.push(t2);
+			}
+			var line_obj = scene.getObjectByName('nurbsCircle2');
+			scene.remove(line_obj);
+			
+			for(var i in a2){
+				var min = 100;
+				var mk = 0;
+				for(var j in a1){
+					var dis = a2[i].distanceTo(a1[j]);
+					mk = dis < min? j: mk;
+					min = dis < min? dis: min;
+				}
+				a2n.push(a1n[mk]);
+			}
+			
+			//增加座標點
+			var ta2 = [];
+			var ta2n = [];
+			var cnt = 5;
+			for(var i = 0; i < a2.length - 1; i++){
+				var tmp = new THREE.Vector3();
+				var tmpn = new THREE.Vector3();
+				var next = i - (-1);
+				next = next == a2.length? 0: next;
+				tmp.subVectors(a2[next], a2[i]);
+				tmpn.subVectors(a2n[next], a2n[i]);
+				ta2.push(a2[i].clone());
+				ta2n.push(a2n[i].clone());
+				for(var j = 1; j < cnt; j++){
+					ta2.push(a2[i].clone().add(tmp.clone().multiplyScalar(j/cnt)));
+					ta2n.push(a2n[i].clone().add(tmpn.clone().multiplyScalar(j/cnt)));
+				}
+			}
+			
+			a2 = ta2;
+			a2n = ta2n;
+			
+			looptime = Math.floor(a2.length * change_loop);
+			
+			console.log(looptime, a2.length);
+			parent = new THREE.Object3D();
+			scene.add(parent);
+			
+			//相機
+			a4 = scene.getObjectByName('CameraGroup').children;
+			for(var i in a4){
+				a4[i].position.multiplyScalar(rsize);
+			}
+			camera2 = camera.clone();
+			
+			//燈
+			var light_arr = scene.getObjectByName('LightGroup').children;
+			for(var i in light_arr){
+				light_arr[i].position.multiplyScalar(rsize);
+			}
+			
+			//煞車痕
+			var Pointgeometry = new THREE.Geometry() 
+			var Pointmaterial = new THREE.PointsMaterial({
+				size: 0.1,
+				vertexColors:true,
+				opacity:1,
+				transparent:0,
+				blending: THREE.AdditiveBlending,
+			})
+			
+			for(var i = 0; i < pcnt; i++){
+				var pt = new THREE.Vector3();
+				Pointgeometry.vertices.push(pt);
+				Pointgeometry.colors.push(new THREE.Color(0x000000));
+			}
+			spherePoints = new THREE.Points(Pointgeometry, Pointmaterial);
+			scene.add(spherePoints);
+			spherePoints.frustumCulled = false;
+			
+			var count = 10;
+			var speed_max = 3.2;
+			var dw = 0.1;
+			//建立車子物件
+			for(var i = 0; i < count; i++){
+				var f = i == count - 1;
+				car_arr.push(car_create(i, f));
+			}
+			
+			//基礎速率
+			for(var i = 0; i < count; i++){
+				var tmp_arr = [];
+				for(var j = i; j < i + 4; j++){
+					tmp_arr.push(Math.round((speed_max - dw * j)*100)/100);
+				}
+				base_speed.push(tmp_arr);
+			}
+			var r_tmp = [];
+			for(var i in base_speed){
+				var tmp_arr1 = base_speed[i].slice();
+				var tmp_arr2 = base_speed[base_speed.length - 1 - i].slice();
+				r_tmp.push(tmp_arr1.concat(tmp_arr2));
+			}
+			base_speed = r_tmp.slice();
+			
+			setInterval(function(){rank_move();}, 500);
+			var stats = new Stats();
+			var main_camera;
+			document.body.appendChild(stats.dom);
+			requestAnimationFrame(function loop(){
+				animate5();
+				stats.update();
+				main_camera = change_camera();
+				renderer.render(scene, main_camera);
+				requestAnimationFrame(loop);
+			});
+		}
+		
+		function animate5(){
+			for(var i in car_arr){
+				var z = car_arr[i].z;
+				var car = car_arr[i].car;
+				var speed = car_arr[i].speed;
+				var lane = car_arr[i].lane;
+				var camera2 = car_arr[i].camera2;
+				var camera3 = car_arr[i].camera3;
+				
+				var t = (z) / looptime;
+				var segments = a2.length;
+				var pickt = t * segments;
+				var pick = Math.floor(pickt) % a2.length;
+				
+				var pickNext = (pick + 1) % a2.length;
+				var now = a2[pick].clone();
+				var car_v = a2[pick].clone();
+				
+				var vrT = new THREE.Vector3();
+				var vrU = new THREE.Vector3();
+				var cross = new THREE.Vector3();
+				
+				vrT.subVectors(a2[pickNext], a2[pick]).normalize();
+				vrU.copy(a2n[pick]).normalize();
+				cross.crossVectors(vrT, vrU).normalize();
+				
+				now.add(vrU.clone().multiplyScalar((rsize / 2) * 1.5));
+
+				//汽車移動
+				car.position.copy(car_v.clone().add(cross.clone().multiplyScalar(lane.val)));
+				var d = cross.clone().multiplyScalar(lane.head);
+				car.matrix.lookAt(car.position.clone().add(vrT).add(d), car.position, vrU.clone().add(cross.clone().multiplyScalar(lane.cforce)));
+				car.quaternion.setFromRotationMatrix(car.matrix);
+				
+				//跟隨相機
+				camera2.position.copy(now.clone().sub(vrT.clone().multiplyScalar((rsize / 2) * 3)).add(cross.clone().multiplyScalar(0)));
+				camera3.position.copy(now.clone().add(vrT.clone().multiplyScalar((rsize / 2) * 3)).add(cross.clone().multiplyScalar(0)));
+				camera2.lookAt(a2[pick]);
+				camera3.lookAt(a2[pick]);
+				
+				//轉彎角度計算
+				var tmp1 = vrT.clone();
+				var tmp2 = vrT.clone();
+				var range = 150;
+				var next = (pickNext + range) % a2.length;
+				tmp2.subVectors(a2[next], a2[pickNext]).normalize();
+				var tv = tmp2.clone().projectOnVector(tmp1);
+				var tn = tmp2.clone().projectOnVector(cross);
+				
+				var tmfg = tn.angleTo(cross) < 3? 1: -1;
+				
+				tmp2.addVectors(tv, tn);
+				var angle = tmp1.angleTo(tmp2);
+				var angle2 = 180 * angle / Math.PI;
+				
+				if(car_arr[i].fg == 1){
+					//切內道
+					if(angle2 > 3.8){
+						var add = tmfg == 1? 7: 0;
+						var my_road = road_min + start_width * (car_arr[i].final_road + add);
+						if(car_arr[i].tmfg != tmfg){							
+							change_road2(i, my_road, 2);
+						}
+						car_arr[i].tmfg = tmfg;
+					}
+				}else{
+					car_arr[i].tmfg = 0;
+				}
+				
+				//甩尾
+				if(angle2 > 3.5 && car_arr[i].speed >= 2.6){
+					var angle3 = angle2 <= 8? angle2: 8;
+					car_slide(i, tmfg, angle3 * 0.3);	
+				}
+				//衝刺特效
+				if(car_arr[i].speed > 2.7){
+					car_arr[i].air_start();
+				}else{
+					car_arr[i].air_stop();
+				}
+				
+				//甩尾胎痕
+				if(Math.abs(car_arr[i].lane.fg, 0) > 0.03){
+					
+					var p_arr = [2, 0];
+					for(var x in p_arr){						
+						var t_now = new THREE.Vector3();
+						car.children[p_arr[x]].getWorldPosition(t_now);
+						t_now.add(vrT.clone().multiplyScalar(0.35));
+						var last = car_arr[i].last[x] || t_now;
+						var sub = new THREE.Vector3();
+						var cnt = 5 + Math.floor(car_arr[i].speed * 4);
+						cnt = 3;
+						sub.subVectors(t_now, last);
+						
+						for(var y = 1; y <= cnt; y++){
+							var tmp_vr = last.clone().add(sub.clone().multiplyScalar(y/cnt));
+							spherePoints.geometry.colors[tmp_next] = color2[i];
+							clearInterval(spherePoints.geometry.vertices[tmp_next].interval || null);
+							spherePoints.geometry.vertices[tmp_next] = tmp_vr;						
+							(function(tmp_next){
+								spherePoints.geometry.vertices[tmp_next].interval = setTimeout(function(){
+									spherePoints.geometry.vertices[tmp_next] = {x:0, y:0, z:0};	
+									spherePoints.geometry.colors[tmp_next] = {r:0,g:0,b:0};
+									spherePoints.geometry.colorsNeedUpdate = true;
+									spherePoints.geometry.verticesNeedUpdate = true;
+								}, 6000);
+							})(tmp_next);
+							tmp_next = (tmp_next + 1) % pcnt;
+							spherePoints.geometry.colorsNeedUpdate = true;
+							spherePoints.geometry.verticesNeedUpdate = true;
+						}
+						car_arr[i].last[x] = t_now;
+					}
+				}else{
+					car_arr[i].last[0] = null;
+					car_arr[i].last[1] = null;
+				}
+				
+				car_arr[i].z = (car_arr[i].z + car_arr[i].speed);
+				if(car_arr[i].z > looptime){
+					car_arr[i].z -= looptime;
+					car_arr[i].circle = (car_arr[i].circle + 1) % 1000;
+				}
+				move[i] = {key:i, count:car_arr[i].circle * looptime + car_arr[i].z};
+			}
+		}
+		
+		function game_start(rank, draw_uid){
+			//初始數據
+			TweenMax.killAll();
+			for(var i in car_arr){
+				car_arr[i].reset();
+			}
+			
+			for(var i in spherePoints.geometry.vertices){
+				spherePoints.geometry.vertices[i] = {x:0, y:0, z:0};	
+				spherePoints.geometry.colors[i] = {r:0,g:0,b:0};
+				clearInterval(spherePoints.geometry.vertices[i].interval || null);
+			}
+			spherePoints.geometry.colorsNeedUpdate = true;
+			spherePoints.geometry.verticesNeedUpdate = true;
+			
+			for(var i in timeout_arr){
+				clearTimeout(timeout_arr[i]);
+			}
+			timeout_arr = [];
+			
+			rank = rank.map(x => parseInt(x));
+			var mid_count = 5;
+			var speed_arr = random_speed(rank, draw_uid, mid_count);
+			var c_road = [0,0,0,0,1,1,1,2,2,2];
+			c_road = shuffle3(c_road, rank, draw_uid, rank[0]);
+			
+			//計算前半程排名
+			var c_road2 = [];
+			for(var i in speed_arr){
+				var tmp = speed_arr[i].slice(0, 4);
+				var sum = tmp.reduce(function(a, b){
+					return a - (-b);
+				});
+				c_road2.push({key:i, sum:sum});
+			}
+			c_road2.sort(function(a, b) {
+				return b.sum - a.sum;
+			});
+			for(var i in c_road2){
+				car_arr[c_road2[i].key].mid_rank = i - (-1);
+			}
+			
+			//計算後半程超車順位
+			var tmp2 = [];
+			for(var i in rank){
+				tmp2[rank[i] -1] = {key: rank[i] -1, over: car_arr[rank[i] -1].mid_rank - (i - (-1))};
+				car_arr[rank[i] - 1].final_rank = i - (-1);
+			}
+			tmp2.sort(function(a, b) {
+				return a.over - b.over;
+			});
+			for(var i in tmp2){
+				car_arr[tmp2[i].key].over = i;
+			}
+			
+			//動畫排程
+			for(var i in car_arr){
+				var delay_time = 3.5;
+				var change_time = 1;
+				for(var nt = 0; nt < speed_arr[i].length; nt++){
+					TweenMax.to(car_arr[i], change_time,{speed: speed_arr[i][nt]}).delay(nt * delay_time);
+					if(nt == 4){
+						var road_delay = nt * delay_time + 0.2 * car_arr[i].mid_rank;
+						TweenMax.to(car_arr[i], 0.001,{fg: 1}).delay(road_delay);
+						TweenMax.to(car_arr[i], 0.001,{final_road: c_road[car_arr[i].mid_rank - 1]}).delay(road_delay);
+					}else if(nt == mid_count - (-4)){
+						(function(x){
+							var road_delay = nt * delay_time + 0.2 * car_arr[x].over;
+							timeout_arr.push(setTimeout(function() {
+								var new_road = road_min + start_width * (rank[car_arr[x].over] - 1);
+								car_arr[x].fg = 0;
+								change_road2(x, new_road, 2);
+							}, 1000 * road_delay));
+						
+						})(i);
+					}
+				}
+				TweenMax.to(car_arr[i], 0.001,{fg: 1}).delay(speed_arr[i].length * delay_time);
+				TweenMax.to(car_arr[i], 0.001,{final_road: c_road[car_arr[i].final_rank - 1]}).delay(speed_arr[i].length * delay_time);
+				TweenMax.to(car_arr[i], change_time,{speed: 2.6}).delay(speed_arr[i].length * delay_time);
+			}
+		}
+		
+		//甩尾
+		function car_slide(key, rl, angle){
+			var slide_arr = car_arr[key].slide_arr;
+			for(var i in slide_arr){
+				slide_arr[i].kill(null, car_arr[key].lane);
+			}
+			var tmp = [];
+			car_arr[key].lane.fg = 0.1;
+			tmp.push(TweenMax.to(car_arr[key].lane, 2,{head: angle * rl, cforce: -0.1 * rl}));
+			tmp.push(TweenMax.to(car_arr[key].lane, 0.9,{head: 0, cforce: 0, fg: 0}).delay(0.3));
+			car_arr[key].slide_arr = tmp;
+		}
+		
+		function change_camera(){
+			var car = car_arr[key].car;
+			var camera2 = car_arr[key].camera2;
+			var camera3 = car_arr[key].camera3;
+			var min = 5000;
+			var ckey = 0;
+			for(var i in a4){
+				a4[i].lookAt(car.position.clone());
+				var tmp = a4[i].position.clone().sub(car.position.clone());
+				
+				ckey = tmp.length() < min? i: ckey; 
+				min = tmp.length() < min? tmp.length(): min; 
+			}
+			
+			if(flag == 1){				
+				return a4[ckey];
+			}else if(flag == 2){
+				return camera;
+			}else if(flag == 3){
+				return camera2;
+			}else{
+				return camera3;
+			}
+		}
+		
+		function change_road2(key, new_road, time){
+			var lane = car_arr[key].lane;
+			var rl = new_road > lane.val? 1: -1;
+			new_road = new_road > road_max? road_max: new_road;
+			new_road = new_road < road_min? road_min: new_road;
+			var abs = Math.abs(lane.real_val - new_road);
+			
+			if(abs > 0.0001){
+				lane.real_val = new_road;
+				TweenMax.to(lane, time, {val:lane.real_val});
+				TweenMax.to(lane, time / 2,{head: 0.2 * rl});
+				TweenMax.to(lane, time / 2,{head: 0}).delay(time/2);
+			}
+		}
+		
+		function car_create(i, end){
+			var obj = {};
+			obj.car = end? car: car.clone();
+			obj.car.children[4].children[0].material = car.children[4].children[0].material.clone();
+			obj.car.children[4].children[0].material.map = new THREE.ImageUtils.loadTexture('img/car' + (i + 1) + '.jpg');
+			obj.key = i;
+			obj.camera2 = camera2.clone();
+			obj.camera3 = camera2.clone();
+			obj.plane = new THREE.Mesh(color_geometry, color_material[i]);
+			obj.air_animate = create_air();
+			obj.air_start = function(){
+				obj.air_animate.start();
+				obj.car.add(obj.air_animate);
+			};
+			obj.air_stop = function(){
+				obj.car.remove(obj.air_animate);
+				obj.air_animate.stop();
+			};
+			obj.reset = function(){
+				obj.air_stop();
+				obj.z =  120 * Math.floor(obj.key / 10);
+				obj.speed = 0;
+				obj.circle = 0;
+				obj.mid_rank = 0;
+				obj.final_rank = 0;
+				obj.slide_arr = [];
+				obj.final_road = obj.key;
+				obj.over = 0;
+				obj.tmfg = 0;
+				obj.fg = 0;
+				obj.last = [null, null];
+				obj.lane = {
+					val      : road_min + (obj.key % 10) * start_width,
+					real_val : road_min + (obj.key % 10) * start_width,
+					head     : 0,
+					cforce   : 0,
+					fg       : 0,
+				};
+			};
+			
+			obj.reset();
+			scene.add(obj.car);
+			scene.add(obj.camera2);
+			return obj;
+		}
+		
+		function random_speed(rank, draw_uid, mid_count){
+			var middle = [];
+			var speed_arr = shuffle3(base_speed.slice(), rank, draw_uid, 0);
+			for(var i = 0; i < mid_count; i++){
+				middle.push(2.6);
+			}
+			
+			var rank_speed = [];
+			for(i in rank){
+				var tmp_arr1 = speed_arr[rank[i] - 1].slice(0, speed_arr.length / 2);
+				var tmp_arr2 = speed_arr[rank[i] - 1].slice(speed_arr.length / 2);
+				tmp_arr1 = shuffle3(tmp_arr1, rank, draw_uid, i);
+				tmp_arr1 = tmp_arr1.concat(middle);
+				for(var j = 0; j < 2; j++){					
+					tmp_arr2.push(3.3 - 0.1 * i);
+				}
+				tmp_arr2 = shuffle3(tmp_arr2, rank, draw_uid, i);
+				rank_speed[rank[i] - 1] = tmp_arr1.concat(tmp_arr2);
+			}
+			
+			return rank_speed;
+		}
+		
+		function shuffle3(array, rank, draw_uid, shift){
+			var sf = [];
+			for(var i in rank){
+				if(i % 2 != 0){
+					var tmp = Math.floor((draw_uid % 1000) / 100) +  Math.floor((draw_uid % 100) / 10) + (draw_uid % 10);
+					var tmp2 = 1 + (rank[i-1] + rank[i] + tmp)% 10;
+					sf.push(tmp2);
+				}else{
+					sf.push(rank[i]);
+				}
+			}
+			for(var i = 0; i < array.length; i++){
+				var j = (sf[(i + shift) % sf.length] - 1) % array.length;
+				[array[i], array[j]] = [array[j], array[i]];
+			}
+			return array;
+		}
+		
+		function create_air(color){
+			var t_group = new THREE.Group();
+			var geometry = new THREE.TorusGeometry( 1, 0.1, 50, 100);
+			var material = new THREE.MeshBasicMaterial( {
+				map: new THREE.TextureLoader().load('./img/t027.png'),
+				blending: THREE.AdditiveBlending,
+				depthTest: false,
+			} );
+			var torus = new THREE.Mesh( geometry, material);
+			
+			for(var i = 0; i < 7; i++){
+				var t_mesh = torus.clone();
+				t_mesh.rotation.z = Math.PI;
+				t_mesh.k = i % 5;
+				var next_scale = 0.2 * (t_mesh.k + 1);
+				t_mesh.scale.set(next_scale,next_scale,next_scale);
+				t_mesh.position.set(0, 0, -t_mesh.k * 0.5);
+				t_group.add(t_mesh);
+				
+			}
+			t_group.position.set(0, 0, 1);
+			t_group.flag = 0;
+			t_group.interval_id = null;
+			
+			t_group.start = function(){
+				if(t_group.flag == 0){
+					t_group.flag = 1;
+					t_group.interval_id = setInterval(function(){
+						for(var i in t_group.children){
+							var t_mesh = t_group.children[i];
+							var k = t_mesh.k;
+							var r = i % 2 == 0? 1: -1;
+							var tmp_scale = 0.2 * (k + 1);
+							t_mesh.scale.set(tmp_scale,tmp_scale,tmp_scale);
+							t_mesh.position.set(0,0,-k*0.5);
+							t_mesh.rotation.z = (t_mesh.rotation.z + (Math.PI/180) * r * 5) % (2 * Math.PI);
+							
+							t_mesh.k = (t_mesh.k+0.3) % 5;
+						}
+					}, 30);
+				}
+			};
+			
+			t_group.stop = function(){
+				clearTimeout(t_group.interval_id);
+				t_group.flag = 0;
+			};
+			
+			return t_group;
+		}
+		
+		function rank_move(){
+			move.sort(function(a, b) {
+				return b.count - a.count;
+			});
+			for(var i in move){
+				var id = '#car-' + move[i].key;
+				$('#car-' + move[i].key).animate({top: 8 + 50 * i});
+			}
+		}
+		
+		$('#bCar').on('click', function(){
+			key = (key + 1) % car_arr.length;
+		});
+		
+		$('.car-rank').on('click', function(){
+			var i = $(this).attr('id').split('-');
+			key = i[1];
+		});
+		
+		$('#b').on('click', function(){
+			flag = (flag + 1) % 4;
+		});
+		
+		$('.start').on('click', function(){
+			var k = $(this).attr('data-val');
+			var uid = '2020062130013';
+			var arr = [
+				['3','7','2','6','1','4','9','5','10','8'],
+				['1','2','3','4','5','6','7','8','9','10']
+			];
+			arr[0].sort(function(a, b){
+				return Math.random() > 0.5 ? -1:1;
+			});
+			console.log(arr[k]);
+			game_start(arr[k], uid);
+		});
+	});
+</script>
+</body>
+</html>
