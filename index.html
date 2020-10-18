@@ -176,15 +176,13 @@
 			road_obj.material.map = new THREE.ImageUtils.loadTexture('img/rd3.jpg?7');
 			road_obj.material.color = null;
 			road_obj.material.side = THREE.DoubleSide; 
-			// road_obj.material.blending = THREE.AdditiveBlending;
 			road_obj.material.map.wrapS = road_obj.material.map.wrapT = THREE.RepeatWrapping;
 			road_obj.material.map.repeat.set( 3,80);
-
+			
 			var road = road_obj.geometry.attributes.position.array;
 			var normal = road_obj.geometry.attributes.normal.array;
 			var line = line_obj.geometry.attributes.position.array;
 			
-
 			
 			for(var i = 0; i < road.length/3; i++){
 				var t2 = new THREE.Vector3(road[3*i], road[3*i+1], road[3*i+2]).multiplyScalar(rsize);
@@ -369,7 +367,7 @@
 					if(angle2 > 3.8){
 						var add = tmfg == 1? 7: 0;
 						var my_road = road_min + start_width * (car_arr[i].final_road + add);
-						if(car_arr[i].tmfg != tmfg){							
+						if(car_arr[i].tmfg != tmfg){
 							change_road2(i, my_road, 2);
 						}
 						car_arr[i].tmfg = tmfg;
@@ -381,7 +379,7 @@
 				//甩尾
 				if(angle2 > 3.5 && car_arr[i].speed >= 2.6){
 					var angle3 = angle2 <= 8? angle2: 8;
-					car_slide(i, tmfg, angle3 * 0.3);	
+					car_slide(i, tmfg, angle3 * 0.3);
 				}
 				//衝刺特效
 				if(car_arr[i].speed > 2.7){
@@ -394,7 +392,7 @@
 				if(Math.abs(car_arr[i].lane.fg, 0) > 0.03){
 					
 					var p_arr = [2, 0];
-					for(var x in p_arr){						
+					for(var x in p_arr){
 						var t_now = new THREE.Vector3();
 						car.children[p_arr[x]].getWorldPosition(t_now);
 						t_now.add(vrT.clone().multiplyScalar(0.35));
@@ -408,7 +406,7 @@
 							var tmp_vr = last.clone().add(sub.clone().multiplyScalar(y/cnt));
 							spherePoints.geometry.colors[tmp_next] = color2[i];
 							clearInterval(spherePoints.geometry.vertices[tmp_next].interval || null);
-							spherePoints.geometry.vertices[tmp_next] = tmp_vr;						
+							spherePoints.geometry.vertices[tmp_next] = tmp_vr;
 							(function(tmp_next){
 								spherePoints.geometry.vertices[tmp_next].interval = setTimeout(function(){
 									spherePoints.geometry.vertices[tmp_next] = {x:0, y:0, z:0};	
@@ -445,7 +443,7 @@
 			}
 			
 			for(var i in spherePoints.geometry.vertices){
-				spherePoints.geometry.vertices[i] = {x:0, y:0, z:0};	
+				spherePoints.geometry.vertices[i] = {x:0, y:0, z:0};
 				spherePoints.geometry.colors[i] = {r:0,g:0,b:0};
 				clearInterval(spherePoints.geometry.vertices[i].interval || null);
 			}
@@ -547,7 +545,7 @@
 				min = tmp.length() < min? tmp.length(): min; 
 			}
 			
-			if(flag == 1){				
+			if(flag == 1){
 				return a4[ckey];
 			}else if(flag == 2){
 				return camera;
@@ -632,7 +630,7 @@
 				var tmp_arr2 = speed_arr[rank[i] - 1].slice(speed_arr.length / 2);
 				tmp_arr1 = shuffle3(tmp_arr1, rank, draw_uid, i);
 				tmp_arr1 = tmp_arr1.concat(middle);
-				for(var j = 0; j < 2; j++){					
+				for(var j = 0; j < 2; j++){
 					tmp_arr2.push(3.3 - 0.1 * i);
 				}
 				tmp_arr2 = shuffle3(tmp_arr2, rank, draw_uid, i);
